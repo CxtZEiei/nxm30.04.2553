@@ -1,0 +1,376 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+  <meta charset="UTF-8" />
+  <title>nxm 30 04 2553</title>
+  <style>
+    html, body {
+      margin: 0; padding: 0;
+      width: 100vw; height: 100vh;
+      background: radial-gradient(circle, #0a001a 0%, #000000 100%);
+      overflow: hidden;
+      font-family: 'Segoe UI', sans-serif;
+      user-select: none;
+    }
+    .scene {
+      position: absolute;
+      top: 50%; left: 50%;
+      width: 60vw;
+      aspect-ratio: 3 / 4;
+      transform: translate(-50%, -50%);
+      perspective: 1200px;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+    }
+    .glass {
+      width: 160px;
+      height: 160px;
+      border-radius: 50%;
+      background: radial-gradient(circle at 40% 40%, #ffc0cb, #b45f7d);
+      box-shadow: 0 0 30px #ff69b4;
+      filter: drop-shadow(0 0 20px #ff1493);
+      cursor: pointer;
+      transition: all 1s ease;
+      z-index: 10;
+    }
+    .glass.fade {
+      opacity: 0;
+      transform: scale(0.6);
+    }
+    canvas {
+      display: block;
+      position: absolute;
+      top: 0; left: 0;
+      width: 100%;
+      height: 100%;
+      z-index: 5;
+      background: transparent;
+    }
+    #textLabel {
+      position: absolute;
+      bottom: 5%;
+      width: 100%;
+      text-align: center;
+      font-size: 20px;
+      color: #ffb6c1;
+      text-shadow: 0 0 4px #ff69b4;
+      z-index: 20;
+      user-select: none;
+      display: none;
+      cursor: default;
+    }
+  </style>
+</head>
+<body>
+  <div class="scene">
+    <div class="glass" id="glassOrb"></div>
+    <canvas id="heartCanvas"></canvas>
+    <div id="textLabel">มาง้ออ่ะ&lt;3</div>
+  </div>
+
+<script>
+  const canvas = document.getElementById("heartCanvas");
+  const ctx = canvas.getContext("2d");
+
+  function resize() {
+    canvas.width = window.innerWidth;
+    canvas.height = window.innerHeight;
+  }
+  resize();
+  window.addEventListener('resize', resize);
+
+  const starCount = 700;
+  let stars = [];
+  let heartPoints = [];
+  let heartVisible = false;
+  let animationIndex = 0;
+  let rotationY = 0;
+  let isDragging = false;
+  let lastX = 0;
+
+  // ตรวจว่าจุดอยู่ในรูปหัวใจหรือไม่
+  function isInHeart(x, y) {
+    y = -y;
+    return Math.pow(x * x + y * y - 1, 3) - x * x * Math.pow(y, 3) <= 0;
+  }
+
+  // สร้างจุดดาวเต็มพื้นที่หัวใจ
+  function createHeartPoints(count) {
+    const points = [];
+    while (points.length < count) {
+      const x = Math.random() * 2.4 - 1.2;
+      const y = Math.random() * 2.4 - 1.2;
+      if (isInHeart(x, y)) {
+        const z = (Math.random() - 0.5) * 60;
+        points.push({
+          x: x * 100,
+          y: y * 100,
+          z: z,
+        });
+      }
+    }
+    return points;
+  }
+  heartPoints = createHeartPoints(starCount);
+
+  // หา y บนสุดและล่างสุดของหัวใจ เพื่อใช้เป็นจุดเริ่มต้นดาวตก
+  let heartTopY = Math.min(...heartPoints.map(p => p.y));
+  let heartBottomY = Math.max(...heartPoints.map(p => p.y));
+
+  // สร้างดาวกระจายทั่วไป (นอกหัวใจ)
+  function createStarsScatter(count) {
+    const arr = [];
+    for (let i = 0; i < count; i++) {
+      arr.push({
+        x: Math.random() * canvas.width - canvas.width / 2,
+        y: Math.random() * canvas.height - canvas.height / 2,
+        z: Math.random() * 800 - 400,
+        size: Math.random() * 0.4 + 0.12,
+        baseAlpha: Math.random() * 0.5 + 0.5,
+        alpha: 1,
+        flickerSpeed: Math.random() * 0.05 + 0.01,
+        flickerPhase: Math.random() * Math.PI * 2,
+        colorType: Math.random() < 0.6 ? "pink" : "white",
+      });
+    }
+    return arr;
+  }
+  stars = createStarsScatter(starCount);
+
+  // สร้างดาวหลังหัวใจสีขาวเว้นขอบหัวใจ (50 ดวง)
+  function createStarsBehind(count) {
+    const arr = [];
+    let tries = 0;
+    while (arr.length < count && tries < count * 20) {
+      tries++;
+      const x = Math.random() * canvas.width - canvas.width / 2;
+      const y = Math.random() * canvas.height - canvas.height / 2;
+      const hx = x / 100;
+      const hy = y / 100;
+      if (Math.pow(hx * hx + hy * hy - 1, 3) - hx * hx * Math.pow(hy, 3) > 0.15) { // เว้นขอบหัวใจ
+        arr.push({
+          x: x,
+          y: y,
+          size: Math.random() * 0.3 + 0.15,
+          baseAlpha: Math.random() * 0.5 + 0.5,
+          alpha: 1,
+          flickerSpeed: Math.random() * 0.05 + 0.01,
+          flickerPhase: Math.random() * Math.PI * 2,
+        });
+      }
+    }
+    return arr;
+  }
+  let starsBehind = [];
+
+  // ลากหมุนหัวใจ
+  canvas.addEventListener("mousedown", e => {
+    if (!heartVisible) return;
+    isDragging = true;
+    lastX = e.clientX;
+  });
+  window.addEventListener("mouseup", () => isDragging = false);
+  window.addEventListener("mousemove", e => {
+    if (!isDragging) return;
+    const deltaX = e.clientX - lastX;
+    lastX = e.clientX;
+    rotationY += deltaX * 0.01;
+  });
+
+  // แอนิเมชันเปลี่ยนดาวเป็นหัวใจ (ไม่มีแสงวาบ)
+  function animateToHeart() {
+    animationIndex = 0;
+    starsBehind = createStarsBehind(50);
+    const interval = setInterval(() => {
+      if (animationIndex >= stars.length) {
+        heartVisible = true;
+        document.getElementById("textLabel").style.display = "block";
+        clearInterval(interval);
+        return;
+      }
+      stars[animationIndex].x = heartPoints[animationIndex].x;
+      stars[animationIndex].y = heartPoints[animationIndex].y;
+      stars[animationIndex].z = heartPoints[animationIndex].z;
+      animationIndex++;
+    }, 2);
+  }
+
+  document.getElementById("glassOrb").addEventListener("click", () => {
+    document.getElementById("glassOrb").classList.add("fade");
+    animateToHeart();
+  });
+
+  // ดาวตกแบบกลุ่ม เฉียง 45 องศา ห่างกัน ตาม mode สุ่มบนหัวใจหรือล่างหัวใจ
+  let fallingStarGroup = [];
+  let groupActive = false;
+
+  function spawnFallingStarGroup() {
+    if (groupActive) return;
+
+    const groupSize = Math.floor(Math.random() * 2) + 2; // 2 หรือ 3 ดวง
+    fallingStarGroup = [];
+
+    // mode 0 = บนหัวใจ → ขวาล่าง
+    // mode 1 = ล่างหัวใจ (ต่ำกว่า) → ขวาล่าง
+    const mode = Math.random() < 0.5 ? 0 : 1;
+
+    const baseY = mode === 0
+      ? heartTopY - 30 + Math.random() * 30       // บนหัวใจ + เลื่อนเล็กน้อย
+      : heartBottomY + 10 + Math.random() * 30;   // ล่างหัวใจ + เลื่อนลงต่ำกว่า
+
+    for(let i = 0; i < groupSize; i++) {
+      const yStart = baseY + i * 20 + (Math.random() * 10);
+
+      let speed = Math.random() * 4 + 3;
+      let star = {
+        x: -20,
+        y: yStart,
+        length: Math.random() * 15 + 10,
+        alpha: Math.random() * 0.6 + 0.4,
+        flickerPhase: Math.random() * Math.PI * 2,
+        speedX: speed,
+        speedY: speed * 0.7, // ความเร็วแกน Y สำหรับเฉียง
+        mode: mode,
+      };
+      fallingStarGroup.push(star);
+    }
+
+    groupActive = true;
+  }
+
+  function drawFallingStars() {
+    if (!groupActive) {
+      spawnFallingStarGroup();
+    }
+
+    let allGone = true;
+
+    fallingStarGroup.forEach((star, index) => {
+      if (!star) return;
+
+      star.x += star.speedX;
+      star.y += star.speedY;
+
+      if (star.x - star.length > canvas.width || star.y - star.length > canvas.height) {
+        fallingStarGroup[index] = null;
+      } else {
+        allGone = false;
+      }
+
+      const time = performance.now() / 1000;
+      const flicker = Math.sin(time * 10 + star.flickerPhase) * 0.3;
+      const alpha = Math.min(Math.max(star.alpha + flicker, 0), 1);
+
+      const grad = ctx.createLinearGradient(star.x, star.y, star.x - star.speedX * star.length, star.y - star.speedY * star.length);
+      grad.addColorStop(0, `rgba(255,255,255,${alpha.toFixed(2)})`);
+      grad.addColorStop(1, 'rgba(255,255,255,0)');
+
+      ctx.save();
+      ctx.strokeStyle = grad;
+      ctx.lineWidth = 1.5;
+      ctx.shadowColor = `rgba(255,255,255,${alpha.toFixed(2)})`;
+      ctx.shadowBlur = 8;
+
+      ctx.beginPath();
+      ctx.moveTo(star.x, star.y);
+      ctx.lineTo(star.x - star.speedX * star.length, star.y - star.speedY * star.length);
+      ctx.stroke();
+
+      ctx.beginPath();
+      ctx.fillStyle = `rgba(255,255,255,${alpha.toFixed(2)})`;
+      ctx.shadowColor = ctx.fillStyle;
+      ctx.shadowBlur = 10;
+      ctx.arc(star.x, star.y, 2.5, 0, Math.PI * 2);
+      ctx.fill();
+
+      ctx.restore();
+    });
+
+    if (allGone) {
+      groupActive = false;
+    }
+  }
+
+  // วาดดาวและหัวใจ
+  function draw() {
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    const centerX = canvas.width / 2;
+    const centerY = canvas.height / 2;
+
+    ctx.save();
+
+    const time = performance.now() / 1000;
+
+    if (heartVisible) {
+      // วาดดาวหัวใจหมุน 3D
+      for (let s of stars) {
+        s.alpha = s.baseAlpha + Math.sin(time * 3 * s.flickerSpeed + s.flickerPhase) * 0.15;
+        s.alpha = Math.min(Math.max(s.alpha, 0), 1);
+
+        const cosY = Math.cos(rotationY);
+        const sinY = Math.sin(rotationY);
+        const x = s.x * cosY - s.z * sinY;
+        const z = s.x * sinY + s.z * cosY;
+        const y = s.y;
+
+        const distance = 300;
+        const scale = distance / (distance + z);
+        const px = x * scale;
+        const py = y * scale;
+
+        const radius = scale * s.size * 3.5;
+        const alpha = s.alpha * Math.min(Math.max(scale, 0), 1);
+
+        ctx.beginPath();
+        ctx.fillStyle = s.colorType === "pink"
+          ? `rgba(255,105,180,${alpha.toFixed(2)})`
+          : `rgba(255,255,255,${alpha.toFixed(2)})`;
+        ctx.shadowColor = ctx.fillStyle;
+        ctx.shadowBlur = 3;
+        ctx.arc(px + centerX, py + centerY, radius, 0, Math.PI * 2);
+        ctx.fill();
+      }
+
+      // ดาวหลังหัวใจเว้นขอบ
+      starsBehind.forEach(s => {
+        s.alpha = s.baseAlpha + Math.sin(time * 3 * s.flickerSpeed + s.flickerPhase) * 0.15;
+        s.alpha = Math.min(Math.max(s.alpha, 0), 1);
+
+        ctx.beginPath();
+        ctx.fillStyle = `rgba(255,255,255,${s.alpha.toFixed(2)})`;
+        ctx.shadowColor = ctx.fillStyle;
+        ctx.shadowBlur = 5;
+        ctx.arc(s.x + centerX, s.y + centerY, s.size * 2, 0, Math.PI * 2);
+        ctx.fill();
+      });
+
+      drawFallingStars();
+    } else {
+      // วาดดาวพื้นหลังก่อนกดลูกแก้ว
+      for (let s of stars) {
+        s.alpha = s.baseAlpha + Math.sin(time * 3 * s.flickerSpeed + s.flickerPhase) * 0.15;
+        s.alpha = Math.min(Math.max(s.alpha, 0), 1);
+
+        ctx.beginPath();
+        ctx.fillStyle = s.colorType === "pink"
+          ? `rgba(255,105,180,${s.alpha.toFixed(2)})`
+          : `rgba(255,255,255,${s.alpha.toFixed(2)})`;
+        ctx.shadowColor = ctx.fillStyle;
+        ctx.shadowBlur = 3;
+        ctx.arc(s.x + centerX, s.y + centerY, s.size * 3.5, 0, Math.PI * 2);
+        ctx.fill();
+      }
+    }
+
+    ctx.restore();
+
+    requestAnimationFrame(draw);
+  }
+
+  draw();
+
+  // เอา event กดข้อความออก (ไม่มีพลุดาว)
+</script>
+</body>
+</html>
